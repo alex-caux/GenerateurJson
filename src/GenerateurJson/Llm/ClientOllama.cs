@@ -47,6 +47,19 @@ public sealed class ClientOllama : IDisposable
     /// <summary>GET /api/tags : Ollama repond et le modele demande est telecharge.</summary>
     public void VerifierDisponibilite()
     {
+        var modeles = Modeles();
+        if (!ModelePresent(modeles))
+        {
+            var disponibles = modeles.Count == 0 ? "aucun" : string.Join(", ", modeles);
+            throw new ErreurLlm(
+                $"modele « {Modele} » absent d'Ollama (modeles presents : {disponibles}).\n" +
+                $"Telechargement unique (quelques Go) : ollama pull {Modele}");
+        }
+    }
+
+    /// <summary>GET /api/tags : noms des modeles telecharges ; <see cref="ErreurLlm"/> si Ollama ne repond pas.</summary>
+    public IReadOnlyList<string> Modeles()
+    {
         JsonNode? reponse;
         try
         {
@@ -61,22 +74,67 @@ public sealed class ClientOllama : IDisposable
             throw new ErreurLlm(
                 $"Ollama injoignable a {Url} ({e.Message}).\n" +
                 "Installation (une seule fois, gratuit, tout reste en local) : winget install Ollama.Ollama\n" +
-                "puis lancer Ollama (icone dans la barre des taches, ou « ollama serve » dans un terminal).");
+                "puis lancer Ollama (icone dans la barre des taches, ou « ollama serve » dans un terminal).\n" +
+                "Ou lancer GenerateurJson sans argument : le mode interactif propose de tout installer.");
         }
 
-        var modeles = reponse?["models"]?.AsArray()
+        return reponse?["models"]?.AsArray()
             .Select(m => m?["name"]?.GetValue<string>())
             .Where(n => !string.IsNullOrEmpty(n))
             .Select(n => n!)
             .ToList() ?? [];
-        var present = modeles.Any(n =>
-            n == Modele || n == Modele + ":latest" || (!Modele.Contains(':') && n.StartsWith(Modele + ":", StringComparison.Ordinal)));
-        if (!present)
+    }
+
+    public bool ModelePresent(IReadOnlyList<string> modeles) =>
+        modeles.Any(n => n == Modele || n == Modele + ":latest" || (!Modele.Contains(':') && n.StartsWith(Modele + ":", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// POST /api/pull en flux : Ollama telecharge le modele depuis son registre (la seule sortie vers Internet, a la
+    /// demande de l'utilisateur) et rend compte de l'avancement ligne par ligne (statut, octets recus, total).
+    /// </summary>
+    public void TelechargerModele(Action<string, long, long> avancement)
+    {
+        // Client dedie sans delai maximal : quelques Go prennent bien plus que les 180 s des appels ordinaires.
+        using var http = new HttpClient(new HttpClientHandler { UseProxy = false })
         {
-            var disponibles = modeles.Count == 0 ? "aucun" : string.Join(", ", modeles);
-            throw new ErreurLlm(
-                $"modele « {Modele} » absent d'Ollama (modeles presents : {disponibles}).\n" +
-                $"Telechargement unique (quelques Go) : ollama pull {Modele}");
+            BaseAddress = Url,
+            Timeout = System.Threading.Timeout.InfiniteTimeSpan,
+        };
+        using var requete = new HttpRequestMessage(HttpMethod.Post, "api/pull")
+        {
+            Content = new StringContent(new JsonObject { ["model"] = Modele, ["stream"] = true }.ToJsonString(), Encoding.UTF8, "application/json"),
+        };
+        try
+        {
+            using var reponse = http.Send(requete, HttpCompletionOption.ResponseHeadersRead);
+            using var lecteur = new StreamReader(reponse.Content.ReadAsStream(), Encoding.UTF8);
+            if (!reponse.IsSuccessStatusCode)
+            {
+                throw new ErreurLlm($"telechargement du modele {Modele} refuse par Ollama ({(int)reponse.StatusCode}) : {lecteur.ReadToEnd()}");
+            }
+
+            while (lecteur.ReadLine() is { } ligne)
+            {
+                if (ligne.Length == 0)
+                {
+                    continue;
+                }
+
+                var message = JsonNode.Parse(ligne);
+                if (message?["error"]?.GetValue<string>() is { } erreur)
+                {
+                    throw new ErreurLlm($"telechargement du modele {Modele} impossible : {erreur}");
+                }
+
+                avancement(
+                    message?["status"]?.GetValue<string>() ?? string.Empty,
+                    message?["completed"]?.GetValue<long>() ?? 0,
+                    message?["total"]?.GetValue<long>() ?? 0);
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or JsonException)
+        {
+            throw new ErreurLlm($"telechargement du modele {Modele} interrompu : {e.Message}");
         }
     }
 

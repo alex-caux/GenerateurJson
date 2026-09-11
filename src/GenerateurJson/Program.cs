@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -16,7 +17,7 @@ namespace GenerateurJson;
 //     tout le reste (avertissements, rapport --explain, graine, progression) part sur stderr.
 //
 //  Usage : dotnet run --project src/GenerateurJson -- --source exemples/ModelesExemple.cs --type Bobine --count 3 --seed 42
-//          voir --help pour la liste complete des options.
+//          voir --help pour la liste complete des options ; sans argument, les options sont demandees en console.
 // ---------------------------------------------------------------------------------------
 
 internal static class Program
@@ -33,6 +34,56 @@ internal static class Program
             // console non interactive : sans importance
         }
 
+        // Sans argument depuis une vraie console (double-clic sur l'exe, dotnet run sans --) : les options sont
+        // demandees une a une. Entree redirigee (script, pipe) : comportement inchange, erreur d'usage.
+        if (args.Length > 0 || Console.IsInputRedirected)
+        {
+            return Lancer(args, journal);
+        }
+
+        var saisie = new SaisieConsole(Console.In, journal).Demander();
+        if (saisie is null)
+        {
+            return 1;
+        }
+
+        var code = Lancer(saisie, journal);
+        if (ConsoleOuvertePourCeProcessus())
+        {
+            // Sinon la fenetre ouverte par le double-clic se fermerait avant que le JSON ou l'erreur ne soit lu.
+            journal.Write("Appuyez sur Entree pour fermer la fenetre.");
+            Console.In.ReadLine();
+        }
+
+        return code;
+    }
+
+    /// <summary>
+    /// Vrai si aucun autre processus ne partage la console : elle a ete creee pour ce programme (double-clic) et
+    /// disparaitra avec lui. Depuis un terminal ou par dotnet run, le shell y est aussi attache.
+    /// </summary>
+    private static bool ConsoleOuvertePourCeProcessus()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            return GetConsoleProcessList(new uint[2], 2) == 1;
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetConsoleProcessList(uint[] listeProcessus, uint nombre);
+
+    private static int Lancer(string[] args, TextWriter journal)
+    {
         OptionsLigneCommande options;
         try
         {
@@ -54,6 +105,14 @@ internal static class Program
         if (options.Sources.Count == 0)
         {
             journal.WriteLine("erreur : aucune source indiquee (fichier .cs ou dossier). Utilisez --help.");
+            if (args.Length == 0 && Console.IsInputRedirected)
+            {
+                // Typiquement F5 dans VS Code : la console de debogage (csharp.debug.console = internalConsole par
+                // defaut) n'est pas un terminal, le mode interactif n'y pourrait rien lire.
+                journal.WriteLine("Sans argument, les options sont demandees en console, mais l'entree est redirigee ici (console de");
+                journal.WriteLine("debogage de VS Code, pipe...) : lancez dans un terminal, ou reglez \"csharp.debug.console\": \"integratedTerminal\".");
+            }
+
             return 1;
         }
 

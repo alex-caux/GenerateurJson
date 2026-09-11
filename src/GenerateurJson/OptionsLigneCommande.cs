@@ -201,6 +201,8 @@ public sealed class OptionsLigneCommande
 
         Usage :
           GenerateurJson --source <fichier.cs|dossier> [--source ...] [--type Nom] [options]
+          GenerateurJson           sans argument : moteur (regles ou LLM), source, type, nombre, graine
+                                   et sortie sont demandes en console
 
         Sources et cible :
           --source, -s <chemin>    fichier .cs ou dossier (recursif, bin/ et obj/ ignores) ; repetable ;

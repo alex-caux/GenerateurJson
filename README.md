@@ -58,6 +58,78 @@ Le JSON part sur **stdout**, tout le reste (avertissements, rapport `--explain`,
 Codes de sortie : 0 ok, 1 usage, 2 analyse des sources (aucun type, racine ambiguë, `--type` inconnu,
 source absente), 3 erreur d'entrée/sortie, 4 LLM indisponible (Ollama injoignable ou modèle absent).
 
+## Mode interactif (sans argument)
+
+Lancé sans aucun argument depuis une console (double-clic sur `GenerateurJson.exe`, ou `dotnet run --project
+src/GenerateurJson` sans `--`), le programme demande les options essentielles ; questions et messages partent
+sur stderr, comme le reste :
+
+```
+GenerateurJson sans argument : mode interactif (Entree seule = valeur entre crochets).
+Toutes les options sont decrites par --help.
+
+Interpreter les commentaires avec le LLM local (Ollama) (o/n) [n] :
+Source : fichier .cs ou dossier (glisser-deposer accepte) : "exemples\ModelesExemple.cs"
+Types racines (references par aucun autre type) :
+  1. ModelesExemple.Bobine
+Type racine : numero, ou nom de n'importe quel type [1] :
+Nombre de documents [1] : 0
+  --count attend un entier superieur ou egal a 1
+Nombre de documents [1] : 3
+Graine (vide = tiree au hasard) : 42
+Fichier de sortie (vide = affichage ici) :
+Afficher le rapport --explain (o/n) [n] : o
+
+commande equivalente : GenerateurJson --source exemples\ModelesExemple.cs --type ModelesExemple.Bobine --count 3 --seed 42 --explain
+```
+
+- **Moteur** (première question) : `o` pour le LLM local, puis le modèle (défaut `qwen2.5:7b`). Ce qui manque
+  est proposé aussitôt, avec une confirmation avant chaque téléchargement : installer Ollama (installeur officiel
+  de la dernière version publiée sur GitHub, téléchargé avec l'avancement en %, empreinte SHA256 publiée
+  vérifiée, installation silencieuse par utilisateur sans droits administrateur ; à défaut winget), le démarrer,
+  puis télécharger le modèle (avancement en %). Un refus ou un échec repose la question ; `n` ou Entrée continue
+  avec le moteur règles.
+- **Source** : redemandée tant qu'elle est introuvable ou ne contient aucune classe, record ou struct
+  générable ; un chemin glissé-déposé dans la console est accepté (guillemets retirés).
+- **Type racine** : numéro dans la liste des racines (ou de tous les types générables s'il n'y a pas de
+  racine), ou nom de n'importe quel type (`Passe`, `OrdreTravail.Etape`) ; Entrée seule choisit la racine
+  quand elle est unique.
+- **Nombre et graine** : validés par l'analyseur de la ligne de commande lui-même (mêmes règles, mêmes
+  messages), redemandés s'ils sont invalides.
+- La **commande équivalente** est affichée avant l'exécution, pour rejouer ou scripter le même tirage.
+- Ctrl+Z puis Entrée abandonne (code 1). Si la fenêtre a été ouverte pour le seul programme (double-clic), il
+  attend Entrée avant de se fermer, pour laisser lire le JSON ou l'erreur.
+- Entrée redirigée (`< fichier`, pipe, CI, console de débogage de VS Code) : rien n'est demandé, l'absence de
+  source reste une erreur d'usage (code 1), avec un message qui le signale.
+- **F5 dans VS Code** (C# Dev Kit) : par défaut le programme tourne dans la console de débogage
+  (`"csharp.debug.console": "internalConsole"`), qui n'est pas un terminal et n'accepte aucune saisie. Régler
+  `"csharp.debug.console": "integratedTerminal"` (réglages utilisateur, ou `.vscode/settings.json` du dossier
+  ouvert) : les questions apparaissent alors dans le panneau Terminal.
+
+## Exemples fournis
+
+Chaque fichier de `exemples/` est autonome (son propre espace de noms) et rappelle en tête sa commande. Les
+noms de types sont distincts d'un fichier à l'autre : `--source exemples` charge tout le dossier (il faut
+alors `--type`, plusieurs racines étant possibles ; les avertissements d'analyse de `Limites.cs` s'affichent
+aussi, ils sont voulus).
+
+| Source | Racine | Ce qu'il montre |
+|---|---|---|
+| `ModelesExemple.cs` | `--type Bobine` | le jeu d'essai d'origine : bobine, passes, défauts, opérateur ; record documenté par `<param>`, héritage, attributs |
+| `CommandeAcier.cs` | `CommandeAcier` | textes et formats : regex, listes de valeurs (`A\|B\|C`, `Statut : …`, `parmi`), correspondances sur un `char` et sur un texte, valeur fixe, date écrite dans un `string` (`format dd/MM/yyyy HH:mm`), liste sans doublon, dictionnaire, record positionnel |
+| `QualiteCoulee.cs` | `Coulee` | nombres : intervalle `]0;25]`, pas, précision, pair, pourcentage, unités ; enums à valeurs explicites et `[Flags]` ; dictionnaire à clés enum ; `DateOnly`, `TimeOnly`, `TimeSpan` en minutes ; `Guid`, `byte[]` ; record struct ; commentaires `/* */` et `<remarks>` |
+| `Maintenance.cs` | `--type OrdreTravail` | attributs DataAnnotations et System.Text.Json prioritaires sur les commentaires (note dans `--explain`), `required`, base abstraite, interface à implémentation unique, type imbriqué `OrdreTravail.Etape`, champs publics, membres ignorés (`const`, `static`, privé, calculé, `[JsonIgnore]`) |
+| `Telemetrie.cs` | `FlatnessBatch` | commentaires en anglais ; types numériques bornés (`byte`, `sbyte`, `short`, `ushort`, `long`, `float`) ; struct à champs publics ; record struct |
+| `Expedition/` (dossier) | `Expedition` | classe `partial` répartie sur deux fichiers, fusionnée quand le dossier est donné en source ; membres sans commentaire générés par les seuls indices du nom (`CodePostal`, `Pays`, `Email`) |
+| `Limites.cs` | `--type CasLimites` | ce qui produit un avertissement : séparateur de milliers, constante référencée, contraintes incompatibles, valeur d'enum inconnue, plage numérique sur une date, regex hors sous-ensemble, types générés à `null`, clé de dictionnaire non supportée, plusieurs implémentations, type récursif coupé par `--max-depth` |
+
+```bash
+dotnet run --project src/GenerateurJson -- --source exemples/QualiteCoulee.cs --explain --seed 42 > NUL
+dotnet run --project src/GenerateurJson -- --source exemples/Maintenance.cs --type OrdreTravail --count 2 --seed 42
+dotnet run --project src/GenerateurJson -- --source exemples/Expedition --out exemples/expedition.json
+dotnet run --project src/GenerateurJson -- --source exemples --list
+```
+
 ## Ce qui est lu dans le code
 
 **Types** : classes, records (paramètres positionnels et propriétés du corps), structs, record structs,
@@ -196,7 +268,10 @@ la machine. Internet ne sert qu'une fois, pour télécharger Ollama et le modèl
 hors ligne. Le cache des réponses (`%LOCALAPPDATA%\GenerateurJson\cache-llm.json`) contient les
 commentaires des modèles et reste sur le poste.
 
-Installation, une seule fois :
+Installation, une seule fois. Le plus simple : lancer le programme sans argument et répondre `o` à la première
+question (voir [Mode interactif](#mode-interactif-sans-argument)) ; après confirmation, il installe Ollama, le
+démarre et télécharge le modèle. L'installeur d'Ollama se place dans `%LOCALAPPDATA%\Programs\Ollama` et se
+lance à l'ouverture de session ; les modèles vont dans `%USERPROFILE%\.ollama`. À la main :
 
 ```powershell
 winget install Ollama.Ollama        # puis lancer Ollama (icone dans la barre des taches, ou « ollama serve »)
@@ -209,7 +284,7 @@ prend 1 à 4 minutes la première fois, puis l'exécution est instantanée grâc
 version du prompt, type C#, texte du commentaire). La progression `llm 3/12 Passe.ReductionPct` s'affiche
 sur stderr. Une réponse invalide après deux tentatives laisse le membre sans contrainte de commentaire,
 avec un avertissement. Si Ollama est absent ou le modèle non téléchargé, le programme s'arrête avec le
-code 4 et la commande d'installation.
+code 4 et la commande d'installation (le mode interactif, lui, propose de les installer).
 
 ## Reproductibilité
 
@@ -233,8 +308,9 @@ d'une exécution. Sans `--seed`, la graine tirée est affichée sur stderr.
 
 | Fichier | Rôle |
 |---|---|
-| `Program.cs` | Point d'entrée : options, analyse, choix de la racine, moteur (règles ou LLM), rapport, génération, écriture |
+| `Program.cs` | Point d'entrée : mode interactif sans argument, options, analyse, choix de la racine, moteur (règles ou LLM), rapport, génération, écriture |
 | `OptionsLigneCommande.cs` | Analyse des arguments, texte d'aide |
+| `SaisieConsole.cs` | Mode interactif : questions en console, réponses validées par `OptionsLigneCommande` et traduites en arguments |
 | `Modele/Descripteurs.cs` | Types, membres, références de type, commentaires, attributs (données pures) |
 | `Modele/CatalogueTypes.cs` | Résolution des noms, membres effectifs (héritage, partials), racines, implémentations concrètes |
 | `Analyse/AnalyseurSources.cs` | Parcours Roslyn des fichiers, résolution des types C# vers un genre JSON, seconde passe de liaison |
@@ -247,12 +323,13 @@ d'une exécution. Sans `--seed`, la graine tirée est affichée sur stderr.
 | `Contraintes/ContraintesCommunes.cs` | Attributs, `required`, nullable, routage membre/élément, filtrage des valeurs (partagé avec le LLM) |
 | `Contraintes/CalculateurContraintes.cs` | Mémorisation par membre + indices de nom (partagé entre rapport et générateur) |
 | `Llm/ClientOllama.cs`, `CacheLlm.cs`, `SchemaContraintesLlm.cs`, `InterpreteurLlm.cs` | Client local (hôte local imposé), cache, schéma + prompt, validation des réponses |
+| `Llm/InstallateurOllama.cs` | Mode interactif : installation d'Ollama (installeur GitHub vérifié par SHA256, à défaut winget), démarrage, téléchargement du modèle, avancements en % |
 | `Generation/ContexteGeneration.cs` | Graine, séquences, profondeur, avertissements |
 | `Generation/GenerateurValeurs.cs` | Scalaires et enums sous contraintes |
 | `Generation/GenerateurTexte.cs`, `GenerateurMotif.cs`, `IndicesNom.cs` | Textes prononçables et formats, regex inverse, indices tirés du nom |
 | `Generation/GenerateurDocumentJson.cs` | Objets, collections, dictionnaires, nommage, profondeur |
 | `Rapport/RapportExplication.cs` | Le rapport `--explain` |
-| `exemples/ModelesExemple.cs` | Jeu d'essai (bobine, passes, défauts, opérateur) couvrant la grammaire |
+| `exemples/` | Modèles d'exemple, voir « Exemples fournis » (`ModelesExemple.cs` est le jeu d'essai d'origine) ; les `*.json` qu'on y génère sont ignorés par git |
 
 Le dépôt contient un `nuget.config` local (`nuget.org` seul) parce que le flux privé configuré sur le
 poste demande une authentification et ferait échouer la restauration du package Roslyn.
