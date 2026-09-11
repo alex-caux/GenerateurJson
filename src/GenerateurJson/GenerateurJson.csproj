@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>GenerateurJson</RootNamespace>
+    <AssemblyName>GenerateurJson</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Le package Microsoft.CodeAnalysis.Analyzers (dependance transitive de Roslyn) emet RS1036 dans tout projet
+         qui reference Microsoft.CodeAnalysis sans etre lui-meme un analyseur ; avec TreatWarningsAsErrors cela
+         casserait le build. Ce projet n'est pas un analyseur : on desactive ces regles etendues. -->
+    <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+    <!-- Memes reglages GC que les projets voisins (ThreadingLab, ComparaisonPipelines). -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Analyse syntaxique seule (arbres, trivia, commentaires XML) : aucune compilation, aucun SemanticModel. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+  </ItemGroup>
+
+</Project>
