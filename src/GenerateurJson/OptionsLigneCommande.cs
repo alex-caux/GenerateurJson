@@ -222,7 +222,8 @@ public sealed class OptionsLigneCommande
           --null-rate <0..1>       probabilite de null pour les membres nullables ou optionnels (defaut 0)
           --enum-as-int            enums en entier plutot qu'en chaine
           --compact                JSON sur une ligne
-          --out, -o <fichier>      ecrit le JSON dans un fichier (sinon sur stdout ; le reste va sur stderr)
+          --out, -o <chemin>       ecrit le JSON dans un fichier (sinon sur stdout ; le reste va sur stderr) ;
+                                   dossier existant ou chemin termine par \ : <Type>.json dans ce dossier
 
         LLM local optionnel (Ollama, tout reste sur ce poste) :
           --llm                    interprete les commentaires avec le modele local au lieu des regles
