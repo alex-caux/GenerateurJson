@@ -47,7 +47,7 @@ Le JSON part sur **stdout**, tout le reste (avertissements, rapport `--explain`,
 | `--null-rate` | 0..1 | 0 | probabilité de `null` pour les membres nullables (`T?`) ou optionnels ; 0 = documents maximaux |
 | `--enum-as-int` | | | enums en entier plutôt qu'en nom |
 | `--compact` | | | JSON sur une ligne |
-| `--out`, `-o` | fichier | stdout | fichier de sortie (UTF-8 sans BOM) |
+| `--out`, `-o` | fichier ou dossier | stdout | fichier de sortie (UTF-8 sans BOM) ; dossier existant ou chemin terminé par `\` : `<Type>.json` dans ce dossier, créé au besoin |
 | `--llm` | | | interprète les commentaires avec le LLM local |
 | `--llm-model` | nom Ollama | `qwen2.5:7b` | modèle utilisé (implique `--llm`) |
 | `--llm-url` | URL | `http://localhost:11434` | adresse d'Ollama ; **hôte local obligatoire** |
@@ -77,7 +77,7 @@ Nombre de documents [1] : 0
   --count attend un entier superieur ou egal a 1
 Nombre de documents [1] : 3
 Graine (vide = tiree au hasard) : 42
-Fichier de sortie (vide = affichage ici) :
+Fichier ou dossier de sortie (vide = affichage ici) :
 Afficher le rapport --explain (o/n) [n] : o
 
 commande equivalente : GenerateurJson --source exemples\ModelesExemple.cs --type ModelesExemple.Bobine --count 3 --seed 42 --explain
@@ -92,8 +92,9 @@ commande equivalente : GenerateurJson --source exemples\ModelesExemple.cs --type
 - **Source** : redemandée tant qu'elle est introuvable ou ne contient aucune classe, record ou struct
   générable ; un chemin glissé-déposé dans la console est accepté (guillemets retirés).
 - **Type racine** : numéro dans la liste des racines (ou de tous les types générables s'il n'y a pas de
-  racine), ou nom de n'importe quel type (`Passe`, `OrdreTravail.Etape`) ; Entrée seule choisit la racine
-  quand elle est unique.
+  racine), ou nom de n'importe quel type (`Passe`, `OrdreTravail.Etape`, sans tenir compte de la casse) ;
+  Entrée seule choisit le premier type de la liste.
+- **Sortie** : un fichier, ou un dossier dans lequel le JSON est écrit sous `<Type>.json`.
 - **Nombre et graine** : validés par l'analyseur de la ligne de commande lui-même (mêmes règles, mêmes
   messages), redemandés s'ils sont invalides.
 - La **commande équivalente** est affichée avant l'exécution, pour rejouer ou scripter le même tirage.

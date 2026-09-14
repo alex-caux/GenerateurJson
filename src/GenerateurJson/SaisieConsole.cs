@@ -27,7 +27,7 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
             DemanderType(catalogue, arguments);
             DemanderValeur("Nombre de documents", "1", "--count", arguments);
             DemanderValeur("Graine (vide = tiree au hasard)", null, "--seed", arguments);
-            var sortie = SansGuillemets(Lire("Fichier de sortie (vide = affichage ici)", null));
+            var sortie = SansGuillemets(Lire("Fichier ou dossier de sortie (vide = affichage ici)", null));
             if (sortie.Length > 0)
             {
                 arguments.Add("--out");
@@ -139,12 +139,8 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
 
         while (true)
         {
-            var reponse = Lire("Type racine : numero, ou nom de n'importe quel type", proposes.Count == 1 ? "1" : null);
-            if (reponse.Length == 0)
-            {
-                continue;
-            }
-
+            // Entree seule : le premier type propose, quel que soit leur nombre.
+            var reponse = Lire("Type racine : numero, ou nom de n'importe quel type", "1");
             DescripteurType? type;
             if (int.TryParse(reponse, NumberStyles.None, CultureInfo.InvariantCulture, out var numero))
             {
@@ -159,7 +155,7 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
             {
                 try
                 {
-                    type = catalogue.Resoudre(reponse);
+                    type = catalogue.Resoudre(reponse) ?? ResoudreSansCasse(catalogue, reponse);
                 }
                 catch (ErreurAnalyse e)
                 {
@@ -180,6 +176,25 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
             arguments.Add(type.NomComplet);
             return;
         }
+    }
+
+    /// <summary>
+    /// Repli de la saisie (« bobine » pour Bobine) ; le nom exact est ensuite passe a --type, qui reste sensible a la
+    /// casse comme C#. <see cref="ErreurAnalyse"/> si plusieurs types correspondent.
+    /// </summary>
+    private static DescripteurType? ResoudreSansCasse(CatalogueTypes catalogue, string nom)
+    {
+        var candidats = catalogue.Types
+            .Where(t => string.Equals(t.NomSimple, nom, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(t.NomComplet, nom, StringComparison.OrdinalIgnoreCase) ||
+                        t.NomComplet.EndsWith("." + nom, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return candidats.Count switch
+        {
+            0 => null,
+            1 => candidats[0],
+            _ => throw new ErreurAnalyse($"le nom « {nom} » est ambigu : {string.Join(", ", candidats.Select(c => c.NomComplet))}"),
+        };
     }
 
     /// <summary>Reponse validee par l'analyseur de la ligne de commande lui-meme (memes regles, memes messages) ; vide ou egale au defaut : option omise.</summary>

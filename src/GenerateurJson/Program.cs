@@ -220,7 +220,7 @@ internal static class Program
                 journal.WriteLine("avertissement : " + avertissement);
             }
 
-            EcrireJson(document, options, journal);
+            EcrireJson(document, options, racine, journal);
             cache?.Sauvegarder();
         }
 
@@ -285,7 +285,16 @@ internal static class Program
 
     private static string Noms(IEnumerable<DescripteurType> types) => string.Join(", ", types.Select(t => t.NomComplet));
 
-    private static void EcrireJson(JsonNode? document, OptionsLigneCommande options, TextWriter journal)
+    /// <summary>--out designant un dossier (existant, ou termine par un separateur) : le fichier y prend le nom du type racine.</summary>
+    private static string CheminSortie(string sortie, DescripteurType racine)
+    {
+        var chemin = Path.GetFullPath(sortie);
+        return Directory.Exists(chemin) || Path.EndsInDirectorySeparator(sortie)
+            ? Path.Combine(chemin, racine.NomSimple + ".json")
+            : chemin;
+    }
+
+    private static void EcrireJson(JsonNode? document, OptionsLigneCommande options, DescripteurType racine, TextWriter journal)
     {
         var optionsJson = new JsonSerializerOptions
         {
@@ -297,7 +306,7 @@ internal static class Program
 
         if (options.FichierSortie is not null)
         {
-            var chemin = Path.GetFullPath(options.FichierSortie);
+            var chemin = CheminSortie(options.FichierSortie, racine);
             var dossier = Path.GetDirectoryName(chemin);
             if (!string.IsNullOrEmpty(dossier))
             {
