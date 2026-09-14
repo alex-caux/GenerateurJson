@@ -24,10 +24,10 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
             var arguments = new List<string>();
             DemanderMoteur(arguments);
             var catalogue = DemanderSource(arguments);
-            DemanderType(catalogue, arguments);
+            var tous = DemanderType(catalogue, arguments);
             DemanderValeur("Nombre de documents", "1", "--count", arguments);
             DemanderValeur("Graine (vide = tiree au hasard)", null, "--seed", arguments);
-            var sortie = SansGuillemets(Lire("Fichier ou dossier de sortie (vide = affichage ici)", null));
+            var sortie = tous ? DemanderDossierSortie() : SansGuillemets(Lire("Fichier ou dossier de sortie (vide = affichage ici)", null));
             if (sortie.Length > 0)
             {
                 arguments.Add("--out");
@@ -126,8 +126,11 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
         }
     }
 
-    /// <summary>Liste numerotee des racines (ou de tous les types generables s'il n'y en a pas) ; un nom de type est aussi accepte.</summary>
-    private void DemanderType(CatalogueTypes catalogue, List<string> arguments)
+    /// <summary>
+    /// Liste numerotee des racines (ou de tous les types generables s'il n'y en a pas) ; un nom de type est aussi
+    /// accepte. Vrai si * (tous) : pas de --type, chaque type propose ira dans son fichier.
+    /// </summary>
+    private bool DemanderType(CatalogueTypes catalogue, List<string> arguments)
     {
         var racines = catalogue.Racines();
         var proposes = racines.Count > 0 ? racines : catalogue.Types.Where(t => t.EstGenerable).ToList();
@@ -137,10 +140,20 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
             journal.WriteLine($"  {i + 1}. {proposes[i].NomComplet}");
         }
 
+        if (proposes.Count > 1)
+        {
+            journal.WriteLine("  * : tous ces types, un fichier chacun dans un dossier de sortie");
+        }
+
         while (true)
         {
             // Entree seule : le premier type propose, quel que soit leur nombre.
-            var reponse = Lire("Type racine : numero, ou nom de n'importe quel type", "1");
+            var reponse = Lire("Type racine : numero, nom de n'importe quel type" + (proposes.Count > 1 ? ", ou * (tous)" : string.Empty), "1");
+            if (proposes.Count > 1 && (reponse == "*" || string.Equals(reponse, "tous", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
             DescripteurType? type;
             if (int.TryParse(reponse, NumberStyles.None, CultureInfo.InvariantCulture, out var numero))
             {
@@ -174,7 +187,29 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
 
             arguments.Add("--type");
             arguments.Add(type.NomComplet);
-            return;
+            return false;
+        }
+    }
+
+    /// <summary>Tous les types : un dossier est obligatoire ; separateur final ajoute pour que --out le designe meme s'il n'existe pas encore.</summary>
+    private string DemanderDossierSortie()
+    {
+        while (true)
+        {
+            var dossier = SansGuillemets(Lire("Dossier de sortie (un fichier par type)", null));
+            if (dossier.Length == 0)
+            {
+                journal.WriteLine("  un dossier est necessaire pour ecrire un fichier par type");
+                continue;
+            }
+
+            if (File.Exists(dossier))
+            {
+                journal.WriteLine($"  {dossier} est un fichier, pas un dossier");
+                continue;
+            }
+
+            return Path.EndsInDirectorySeparator(dossier) ? dossier : dossier + Path.DirectorySeparatorChar;
         }
     }
 
@@ -246,6 +281,9 @@ public sealed class SaisieConsole(TextReader entree, TextWriter journal)
     /// <summary>Un glisser-deposer dans la console colle le chemin entre guillemets s'il contient un espace.</summary>
     private static string SansGuillemets(string texte) => texte.Trim().Trim('"', '\'').Trim();
 
+    /// <summary>Entre guillemets s'il le faut ; un \ final est double pour ne pas echapper le guillemet fermant.</summary>
     private static string Citer(string argument) =>
-        argument.Length == 0 || argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument;
+        argument.Length == 0 || argument.Any(char.IsWhiteSpace)
+            ? "\"" + argument + (argument.EndsWith('\\') ? "\\" : string.Empty) + "\""
+            : argument;
 }

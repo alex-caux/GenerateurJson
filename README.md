@@ -35,7 +35,7 @@ Le JSON part sur **stdout**, tout le reste (avertissements, rapport `--explain`,
 | Option | Valeur | Défaut | Rôle |
 |---|---|---|---|
 | `--source`, `-s` | fichier `.cs` ou dossier | — | répétable ; un dossier est parcouru récursivement (`bin/`, `obj/`, `*.g.cs` ignorés) ; un argument sans tiret est aussi une source |
-| `--type`, `-t` | nom simple, `Outer.Inner` ou nom qualifié | racine unique | type racine ; sans `--type`, l'unique type (avec au moins un membre) que personne d'autre ne référence est choisi, sinon la liste des candidats est affichée |
+| `--type`, `-t` | nom simple, `Outer.Inner` ou nom qualifié | racine unique | type racine ; sans `--type`, l'unique type (avec au moins un membre) que personne d'autre ne référence est choisi, sinon la liste des candidats est affichée ; avec `--out` vers un dossier, tous les candidats sont générés, un fichier chacun |
 | `--list` | | | liste les types trouvés (avec « racine possible ») et s'arrête |
 | `--explain` | | | affiche sur stderr, pour chaque type atteignable et chaque membre, les commentaires bruts et ce qui en a été compris |
 | `--count`, `-n` | N ≥ 1 | 1 | nombre de documents : un objet si 1, un tableau sinon |
@@ -47,7 +47,7 @@ Le JSON part sur **stdout**, tout le reste (avertissements, rapport `--explain`,
 | `--null-rate` | 0..1 | 0 | probabilité de `null` pour les membres nullables (`T?`) ou optionnels ; 0 = documents maximaux |
 | `--enum-as-int` | | | enums en entier plutôt qu'en nom |
 | `--compact` | | | JSON sur une ligne |
-| `--out`, `-o` | fichier ou dossier | stdout | fichier de sortie (UTF-8 sans BOM) ; dossier existant ou chemin terminé par `\` : `<Type>.json` dans ce dossier, créé au besoin |
+| `--out`, `-o` | fichier ou dossier | stdout | fichier de sortie (UTF-8 sans BOM) ; dossier existant ou chemin terminé par `\` : `<Type>.json` dans ce dossier, créé au besoin (sans `--type` : un fichier par type racine ; nom qualifié si deux racines ont le même nom simple) |
 | `--llm` | | | interprète les commentaires avec le LLM local |
 | `--llm-model` | nom Ollama | `qwen2.5:7b` | modèle utilisé (implique `--llm`) |
 | `--llm-url` | URL | `http://localhost:11434` | adresse d'Ollama ; **hôte local obligatoire** |
@@ -93,8 +93,10 @@ commande equivalente : GenerateurJson --source exemples\ModelesExemple.cs --type
   générable ; un chemin glissé-déposé dans la console est accepté (guillemets retirés).
 - **Type racine** : numéro dans la liste des racines (ou de tous les types générables s'il n'y a pas de
   racine), ou nom de n'importe quel type (`Passe`, `OrdreTravail.Etape`, sans tenir compte de la casse) ;
-  Entrée seule choisit le premier type de la liste.
-- **Sortie** : un fichier, ou un dossier dans lequel le JSON est écrit sous `<Type>.json`.
+  Entrée seule choisit le premier type de la liste ; `*` (ou `tous`), proposé quand la liste a plusieurs
+  types, les génère tous.
+- **Sortie** : un fichier, ou un dossier dans lequel le JSON est écrit sous `<Type>.json`. Après `*`, un
+  dossier est obligatoire (créé au besoin) et reçoit un fichier par type.
 - **Nombre et graine** : validés par l'analyseur de la ligne de commande lui-même (mêmes règles, mêmes
   messages), redemandés s'ils sont invalides.
 - La **commande équivalente** est affichée avant l'exécution, pour rejouer ou scripter le même tirage.
@@ -111,7 +113,7 @@ commande equivalente : GenerateurJson --source exemples\ModelesExemple.cs --type
 
 Chaque fichier de `exemples/` est autonome (son propre espace de noms) et rappelle en tête sa commande. Les
 noms de types sont distincts d'un fichier à l'autre : `--source exemples` charge tout le dossier (il faut
-alors `--type`, plusieurs racines étant possibles ; les avertissements d'analyse de `Limites.cs` s'affichent
+alors `--type`, plusieurs racines étant possibles, ou `--out` vers un dossier pour un fichier par racine ; les avertissements d'analyse de `Limites.cs` s'affichent
 aussi, ils sont voulus).
 
 | Source | Racine | Ce qu'il montre |
@@ -129,6 +131,7 @@ dotnet run --project src/GenerateurJson -- --source exemples/QualiteCoulee.cs --
 dotnet run --project src/GenerateurJson -- --source exemples/Maintenance.cs --type OrdreTravail --count 2 --seed 42
 dotnet run --project src/GenerateurJson -- --source exemples/Expedition --out exemples/expedition.json
 dotnet run --project src/GenerateurJson -- --source exemples --list
+dotnet run --project src/GenerateurJson -- --source exemples --seed 42 --out sorties/
 ```
 
 ## Ce qui est lu dans le code
@@ -300,7 +303,7 @@ d'une exécution. Sans `--seed`, la graine tirée est affichée sur stderr.
 - Pas de séparateur de milliers ; listes séparées par `, `, `;`, `/`, `|`, `ou`, `et` ; dates `dd/MM/yyyy`
   lues à la française ; heure locale non générée (dates sans décalage, ou `Z` si UTC).
 - Génériques, tuples, `object`, `dynamic`, types absents des sources : `null` avec avertissement.
-- Un seul type racine par exécution ; les initialiseurs de propriétés sont ignorés.
+- Un type racine par document (plusieurs racines : un fichier chacune avec `--out <dossier>`) ; les initialiseurs de propriétés sont ignorés.
 - Pas de sémantique Roslyn : les alias `using`, les types d'autres assemblies et les constantes
   référencées dans un commentaire (« supérieur ou égal à TailleLot ») ne sont pas résolus (avertissement).
 - Le moteur LLM dépend du modèle : vérifier le rapport `--explain` sur un modèle avant de s'y fier.

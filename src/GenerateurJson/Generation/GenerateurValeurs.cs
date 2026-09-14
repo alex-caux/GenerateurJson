@@ -528,7 +528,9 @@ public sealed class GenerateurValeurs(ContexteGeneration contexte)
 
         if (type.Nom == "DateTimeOffset")
         {
-            return JsonValue.Create(new DateTimeOffset(date, utc ? TimeSpan.Zero : contexte.DecalageDateTimeOffset));
+            // Date pivot par defaut (DateTime.Today) de genre Local : DateTimeOffset exigerait alors le decalage du
+            // fuseau a cette date (+01:00 ou +02:00 selon l'heure d'ete) et leverait une exception pour tout autre.
+            return JsonValue.Create(new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Unspecified), utc ? TimeSpan.Zero : contexte.DecalageDateTimeOffset));
         }
 
         return JsonValue.Create(DateTime.SpecifyKind(date, utc ? DateTimeKind.Utc : DateTimeKind.Unspecified));

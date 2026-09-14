@@ -11,7 +11,8 @@ namespace GenerateurJson;
 //
 //  1. analyse syntaxique (Roslyn, sans compilation) des fichiers .cs fournis : types, membres, attributs,
 //     commentaires ;
-//  2. choix du type racine (--type, ou l'unique type que personne ne reference) ;
+//  2. choix du type racine (--type, ou l'unique type que personne ne reference ; avec --out <dossier>, toutes les
+//     racines, un fichier chacune) ;
 //  3. interpretation des commentaires en contraintes : regles regex (defaut) ou LLM local via Ollama (--llm) ;
 //  4. generation deterministe (graine) des documents JSON, ecrits sur stdout ou dans --out ;
 //     tout le reste (avertissements, rapport --explain, graine, progression) part sur stderr.
@@ -161,7 +162,7 @@ internal static class Program
             throw new ErreurAnalyse("aucun type trouve dans les sources");
         }
 
-        var racine = ChoisirRacine(catalogue, options.Type, journal);
+        var racines = ChoisirRacines(catalogue, options.Type, options.FichierSortie, journal);
         var graine = options.Graine ?? Random.Shared.Next();
         journal.WriteLine($"graine utilisee : {graine}");
 
@@ -175,7 +176,7 @@ internal static class Program
             cache = new CacheLlm(null, actif: !options.LlmSansCache);
             var llm = new InterpreteurLlm(client, cache, journal)
             {
-                Total = catalogue.TypesAtteignables(racine)
+                Total = racines.SelectMany(catalogue.TypesAtteignables)
                     .Where(t => t.Genre != GenreDeclaration.Enum)
                     .SelectMany(catalogue.MembresEffectifs)
                     .Distinct()
@@ -192,17 +193,24 @@ internal static class Program
         using (client)
         {
             var contraintes = new CalculateurContraintes(catalogue, interpreteur);
-            if (options.Expliquer)
-            {
-                journal.Write(RapportExplication.Construire(catalogue, racine, contraintes));
-                journal.WriteLine();
-            }
-
             var optionsGeneration = new OptionsGeneration(graine, options.Nommage, options.ProfondeurMax, options.TauxNull, options.EnumEnEntier, options.DatePivot);
-            var generateur = new GenerateurDocumentJson(catalogue, optionsGeneration, contraintes);
-            JsonNode? document = options.Nombre == 1 && !options.Tableau
-                ? generateur.Generer(racine)
-                : generateur.GenererPlusieurs(racine, options.Nombre);
+            var documents = new List<(DescripteurType Racine, JsonNode? Document)>();
+            var avertissementsGeneration = new List<string>();
+            foreach (var racine in racines)
+            {
+                if (options.Expliquer)
+                {
+                    journal.Write(RapportExplication.Construire(catalogue, racine, contraintes));
+                    journal.WriteLine();
+                }
+
+                // Un generateur par type, repartant de la graine : chaque fichier est celui que donnerait --type seul.
+                var generateur = new GenerateurDocumentJson(catalogue, optionsGeneration, contraintes);
+                documents.Add((racine, options.Nombre == 1 && !options.Tableau
+                    ? generateur.Generer(racine)
+                    : generateur.GenererPlusieurs(racine, options.Nombre)));
+                avertissementsGeneration.AddRange(generateur.Avertissements);
+            }
 
             if (!options.Expliquer)
             {
@@ -215,12 +223,15 @@ internal static class Program
                 }
             }
 
-            foreach (var avertissement in generateur.Avertissements)
+            foreach (var avertissement in avertissementsGeneration)
             {
                 journal.WriteLine("avertissement : " + avertissement);
             }
 
-            EcrireJson(document, options, racine, journal);
+            foreach (var (racine, document) in documents)
+            {
+                EcrireJson(document, options, CheminSortie(options.FichierSortie, racine, racines), journal);
+            }
             cache?.Sauvegarder();
         }
 
@@ -243,7 +254,11 @@ internal static class Program
         }
     }
 
-    private static DescripteurType ChoisirRacine(CatalogueTypes catalogue, string? nom, TextWriter journal)
+    /// <summary>
+    /// Le type de --type ; sans --type, l'unique racine, ou toutes les racines (a defaut tous les types generables)
+    /// quand --out designe un dossier, ou chacune aura son fichier.
+    /// </summary>
+    private static IReadOnlyList<DescripteurType> ChoisirRacines(CatalogueTypes catalogue, string? nom, string? sortie, TextWriter journal)
     {
         if (nom is not null)
         {
@@ -251,7 +266,7 @@ internal static class Program
                        ?? throw new ErreurAnalyse($"type « {nom} » introuvable. Types disponibles : {Noms(catalogue.Types)}");
             if (type.EstGenerable)
             {
-                return type;
+                return [type];
             }
 
             var implementations = catalogue.ImplementationsConcretes(type);
@@ -272,29 +287,50 @@ internal static class Program
         if (racines.Count == 1)
         {
             journal.WriteLine($"type racine : {racines[0].NomComplet}");
-            return racines[0];
+            return racines;
         }
 
         var candidats = racines.Count > 0 ? racines : catalogue.Types.Where(t => t.EstGenerable).ToList();
+        if (candidats.Count > 0 && SortieDansDossier(sortie))
+        {
+            journal.WriteLine($"types racines ({candidats.Count}, un fichier chacun) : {Noms(candidats)}");
+            return candidats;
+        }
+
         throw new ErreurAnalyse(
             (racines.Count == 0
                 ? "aucun type racine evident (tous les types generables sont references par un autre)"
                 : "plusieurs types racines possibles") +
-            $" : precisez --type parmi {Noms(candidats)}");
+            $" : precisez --type parmi {Noms(candidats)}, ou --out <dossier> pour un fichier par type");
     }
 
     private static string Noms(IEnumerable<DescripteurType> types) => string.Join(", ", types.Select(t => t.NomComplet));
 
-    /// <summary>--out designant un dossier (existant, ou termine par un separateur) : le fichier y prend le nom du type racine.</summary>
-    private static string CheminSortie(string sortie, DescripteurType racine)
+    /// <summary>--out designe un dossier : existant, ou chemin termine par un separateur (dossier a creer).</summary>
+    private static bool SortieDansDossier(string? sortie) =>
+        sortie is not null && (Path.EndsInDirectorySeparator(sortie) || Directory.Exists(sortie));
+
+    /// <summary>
+    /// Fichier de destination d'un type, null pour stdout. Dossier : &lt;Type&gt;.json dedans, avec le nom qualifie si
+    /// deux types generes partagent le meme nom simple.
+    /// </summary>
+    private static string? CheminSortie(string? sortie, DescripteurType racine, IReadOnlyList<DescripteurType> racines)
     {
-        var chemin = Path.GetFullPath(sortie);
-        return Directory.Exists(chemin) || Path.EndsInDirectorySeparator(sortie)
-            ? Path.Combine(chemin, racine.NomSimple + ".json")
-            : chemin;
+        if (sortie is null)
+        {
+            return null;
+        }
+
+        if (!SortieDansDossier(sortie))
+        {
+            return Path.GetFullPath(sortie);
+        }
+
+        var nom = racines.Count(r => r.NomSimple == racine.NomSimple) > 1 ? racine.NomComplet : racine.NomSimple;
+        return Path.Combine(Path.GetFullPath(sortie), nom + ".json");
     }
 
-    private static void EcrireJson(JsonNode? document, OptionsLigneCommande options, DescripteurType racine, TextWriter journal)
+    private static void EcrireJson(JsonNode? document, OptionsLigneCommande options, string? chemin, TextWriter journal)
     {
         var optionsJson = new JsonSerializerOptions
         {
@@ -304,9 +340,8 @@ internal static class Program
         var texte = (document?.ToJsonString(optionsJson) ?? "null") + "\n";
         var octets = new UTF8Encoding(false).GetBytes(texte);
 
-        if (options.FichierSortie is not null)
+        if (chemin is not null)
         {
-            var chemin = CheminSortie(options.FichierSortie, racine);
             var dossier = Path.GetDirectoryName(chemin);
             if (!string.IsNullOrEmpty(dossier))
             {

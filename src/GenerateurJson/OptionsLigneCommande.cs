@@ -209,6 +209,7 @@ public sealed class OptionsLigneCommande
                                    un argument sans tiret est aussi une source
           --type, -t <Nom>         type racine (nom simple, Outer.Inner ou nom qualifie) ;
                                    sans --type, l'unique type que personne ne reference est choisi
+                                   (tous, un fichier chacun, si --out designe un dossier)
           --list                   liste les types trouves et s'arrete
           --explain                affiche sur stderr ce qui a ete compris de chaque commentaire
 
@@ -224,6 +225,7 @@ public sealed class OptionsLigneCommande
           --compact                JSON sur une ligne
           --out, -o <chemin>       ecrit le JSON dans un fichier (sinon sur stdout ; le reste va sur stderr) ;
                                    dossier existant ou chemin termine par \ : <Type>.json dans ce dossier
+                                   (sans --type : un fichier par type racine)
 
         LLM local optionnel (Ollama, tout reste sur ce poste) :
           --llm                    interprete les commentaires avec le modele local au lieu des regles
